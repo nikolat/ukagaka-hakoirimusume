@@ -1,11 +1,12 @@
-charset,Shift_JIS
+charset,UTF-8
 type,ghost
 shiori,akari.dll
-name,” “ü‚è–º
-sakura.name,ƒiƒ“ƒgƒJ‚µ‚È‚¢‚Æo‚ç‚ê‚È‚¢•”‰®
-kero.name,–º
+name,ç®±å…¥ã‚Šå¨˜
+sakura.name,ãƒŠãƒ³ãƒˆã‚«ã—ãªã„ã¨å‡ºã‚‰ã‚Œãªã„éƒ¨å±‹
+kero.name,å¨˜
 craftman,Don
 craftmanurl,http://nikolat.herokuapp.com/
 homeurl,http://home.384.jp/evidence/update/hakoirimusume/
 icon,icon.ico
 don't need onmousemove,1
+readme.charset,UTF-8

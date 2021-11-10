@@ -1,15 +1,15 @@
-charset,Shift_JIS
+charset,UTF-8
 version,1
 
-group,ƒiƒ“ƒgƒJ‚µ‚È‚¢‚Æo‚ç‚ê‚È‚¢•”‰®
+group,ãƒŠãƒ³ãƒˆã‚«ã—ãªã„ã¨å‡ºã‚‰ã‚Œãªã„éƒ¨å±‹
 {
 	scope,0
-	0,‘f
+	0,ç´ 
 }
-group,–º
+group,å¨˜
 {
 	scope,1
-	10,–³‚µ
+	10,ç„¡ã—
 }
 group,__disabled
 {

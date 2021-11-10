@@ -1,4 +1,4 @@
-charset,Shift_JIS
+charset,UTF-8
 type,ghost
-name,” “ü‚è–º
+name,ç®±å…¥ã‚Šå¨˜
 directory,hakoirimusume
