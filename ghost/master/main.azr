@@ -1,0 +1,1539 @@
+//------------------------------------------------------------------------------
+// 設定(スクリプトログを眺める時はそれぞれ0にすると\i[*]だけ追えます)
+//------------------------------------------------------------------------------
+// balloonを表示するかどうか
+int ENABLE_SHOWING_BALLOON = 1;
+// 同時起動中のGHOSTにイベント通知するかどうか
+int ENABLE_RAISEOTHER = 1;
+//******************************************************************************
+// required event
+//******************************************************************************
+string OnFirstBoot()          { return showStatus(); }
+string OnBoot()               { return showStatus(); }
+string OnGhostChanged()       { return showStatus(); }
+string OnShellChanged()       { return showStatus(); }
+string OnWindowStateRestore() { return showStatus(); }
+string OnSurfaceRestore()     { return ""; }
+string OnClose()              { return "\-\e"; }
+
+//******************************************************************************
+// update event
+//******************************************************************************
+string OnUpdateBegin()            { return "\0\_qUpdate Begin.\_q\e"; }
+string OnUpdateReady()            { return "\0\_qUpdating...\_q\e"; }
+string OnUpdateComplete(dict ref) { return "\0\_q" + ref["Reference0"] + ".\_q\e"; }
+string OnUpdateFailure(dict ref)  { return "\0\_q" + ref["Reference0"] + ".\_q\e"; }
+
+//******************************************************************************
+// mouse event
+//******************************************************************************
+//------------------------------------------------------------------------------
+// クリック
+//------------------------------------------------------------------------------
+//選択状態の対象を記憶
+string selectedTarget;
+//OnMouseClickで消されてもOnMouseDoubleClickで復活させる用
+string selectedTarget2;
+//移動先空白ダブルクリックによる連続移動防止用
+string selectedAreaName;
+//--------------------
+// 移動対象クリックで選択 -> 移動先をクリックで移動
+string OnMouseClick(dict ref)
+{
+	//OnMouseDoubleClickまで残しておく変数の初期化
+	selectedTarget2 = "";
+	selectedAreaName = "";
+	iNeedSelect2 = 0;
+	//右クリックは無効
+	if (ref["Reference5"] != 0)
+		return "";
+	//キー操作して選択肢出たのに突然マウス操作に切り替えた場合
+	if (iNeedSelect)
+	{
+		iNeedSelect = 0;
+		iNeedSelect2 = 1;
+		return showStatus();
+	}
+	//選択された座標と対象を取得
+	string area = ref["Reference4"];//areaXY
+	if (area == "")
+		return "";
+	int x = _substr(area, 4, 1);
+	int y = _substr(area, 5, 1);
+	string t = a[y][x];
+	//空白が選択された場合
+	if (t == "空白")
+	{
+		//前回何かが選択されているので移動できれば移動する
+		if (selectedTarget != "")
+		{
+			string st = selectedTarget;
+			//選択情報の破棄
+			selectedTarget = "";
+			//選択エリア名の保存
+			selectedAreaName = area;
+			//前回選択した対象を今回選択した空白に移動できれば移動
+			if (st == a[y][x - 1])
+			{
+				if (canMove(1, 0, st))
+					return moveRight(st);
+			}
+			else if (st == a[y][x + 1])
+			{
+				if (canMove(-1, 0, st))
+					return moveLeft(st);
+			}
+			else if (st == a[y - 1][x])
+			{
+				if (canMove(0, 1, st))
+					return moveDown(st);
+			}
+			else if (st == a[y + 1][x])
+			{
+				if (canMove(0, -1, st))
+					return moveUp(st);
+			}
+			//移動しない時はこの情報は不要
+			selectedAreaName = "";
+			//前回の選択枠非表示
+			string s;
+			s += getSelectAnimationRemove(st);
+			s += getDummyAnimation();
+			return "\0" + s + "\e";
+		}
+		else
+		{
+			return "";
+		}
+	}
+	//前回何かが選択されて今回も何かが選択された場合
+	else if (selectedTarget != "")
+	{
+		//前回と同じものが選択された場合は何もしない
+		if (selectedTarget == t)
+			return "";
+		string st = selectedTarget;
+		//選択情報の更新
+		selectedTarget2 = st;
+		selectedTarget = t;
+		//前回の選択枠非表示 + 今回の選択枠表示
+		string s;
+		s += getSelectAnimationRemove(st);
+		s += getSelectAnimationAdd(t);
+		return "\0" + s + "\e";
+	}
+	//前回何も選択されておらず今回何かが選択された場合
+	else
+	{
+		//選択情報の保存
+		selectedTarget = t;
+		//今回の選択枠表示
+		string s;
+		s += getSelectAnimationAdd(t);
+		return "\0" + s + "\e";
+	}
+}
+//--------------------
+// 対象に選択枠を表示
+string getSelectAnimationAdd(string t)
+{
+		array aStartPoint = getStartPoint(t, a);
+		int xSp = aStartPoint[0];
+		int ySp = aStartPoint[1];
+		string s = "\i[" + getSelectionNo(t) + xSp + ySp + "]";
+		return s;
+}
+//--------------------
+// 対象の選択枠を除去
+string getSelectAnimationRemove(string t)
+{
+		array aStartPoint = getStartPoint(t, a);
+		int xSp = aStartPoint[0];
+		int ySp = aStartPoint[1];
+		string s = "\i[" + getSelectionNo(t) + xSp + ySp + "99]";
+		return s;
+}
+//--------------------
+// SSP/2.4.94ではstopで描画を消去するにはその後別の描画が必要らしい
+string getDummyAnimation()
+{
+	return "\i[9999]";
+}
+
+//------------------------------------------------------------------------------
+// ダブルクリック
+//------------------------------------------------------------------------------
+string OnMouseDoubleClick(dict ref)
+{
+	//OnMouseClickで消去されたけど引き継がれるべき情報を復元
+	selectedTarget = selectedTarget2;
+	selectedTarget2 = "";
+	iNeedSelect = iNeedSelect2;
+	iNeedSelect2 = 0;
+	//選択された領域名を取得
+	string area = ref["Reference4"];//areaXY
+	if (area == "")
+		return showStatus();
+	//空白選択後の連続移動防止
+	if (area == selectedAreaName)
+	{
+		selectedAreaName = "";
+		return "";
+	}
+	//選択された座標と対象
+	int x = _substr(area, 4, 1);
+	int y = _substr(area, 5, 1);
+	string t = a[y][x];
+	//空白は当たり判定外と同じ動作
+	if (t == "空白")
+		return showStatus();
+	//開いてるところにテキトーに動かす
+	return moveRandom(t);
+}
+//------------------------------------------------------------------------------
+// 移動
+//------------------------------------------------------------------------------
+// moveForceを4方向それぞれ再定義しただけの関数
+string moveRight(string t)
+{
+	return moveForce(1, 0, t);
+}
+string moveLeft(string t)
+{
+	return moveForce(-1, 0, t);
+}
+string moveUp(string t)
+{
+	return moveForce(0, -1, t);
+}
+string moveDown(string t)
+{
+	return moveForce(0, 1, t);
+}
+//--------------------
+// 方向のみ指定して任意の対象を移動
+string moveWithoutTarget(int dx, int dy)
+{
+	//移動可能な対象を取得
+	array at = getMovableTarget(dx, dy);
+	//対象数によって処理を変える
+	switch (_aryvn(at))
+	{
+	  case 0:
+		//移動可能な対象が無かったので何もしない
+		return "";
+	  case 1:
+		//移動可能な対象が1つあったので移動する
+		return moveForce(dx, dy, at[0]);
+	  case 2:
+		string t1 = at[0];
+		string t2 = at[1];
+		//選択された場合のマップを両方用意しておく 選択されたらすぐに切り替えられるよう
+		aSelect[0] = getMovedMap(dx, dy, t1, a);
+		aSelect[1] = getMovedMap(dx, dy, t2, a);
+		//選択肢を用意
+		string s;
+		//既に選択肢が表示されてたら別の選択肢で更新する必要がある
+		if (iNeedSelect)
+			s += getSelectNumberAnimationRemove(arSelectionTarget, a);
+		//候補対象を記憶
+		arSelectionTarget = {t1, t2};
+		//選択肢を取得
+		s += getSelectionScript(t1, t2);
+		s = "\0\_q" + s + "\_q\e";
+		if (!iNeedSelect)
+			//リフレッシュしたくないので\C付きでマップ表示継続
+			//前回マップが表示されてない場合は例外的なので諦める
+			s = "\C" + s;
+		//キー操作で選択肢操作待ち
+		iNeedSelect = 1;
+		return s;
+	  default:
+		return "";
+	}
+}
+//--------------------
+// 選択枠・選択番号を消去
+string getSelectNumberAnimationRemove(array arSt, array aMap)
+{
+	string sSelect;
+	string t1 = arSt[0];
+	string t2 = arSt[1];
+	if ((t1 != "") && (t2 != ""))
+	{
+		//枠を消去
+		for (int i = 0; i < _aryvn(arSt); i++)
+		{
+			string t = arSt[i];
+			array at = getStartPoint(t, aMap);
+			int xPrev = at[0];
+			int yPrev = at[1];
+			sSelect += "\i[" + getSelectionNo(t) + xPrev + yPrev + "99]";
+		}
+		//"1"を消去
+		array at1 = getStartPoint(t1, aMap);
+		int x1 = at1[0];
+		int y1 = at1[1];
+		sSelect += "\i[30" + x1 + y1 + "99]";
+		//"2"を消去
+		array at2 = getStartPoint(t2, aMap);
+		int x2 = at2[0];
+		int y2 = at2[1];
+		sSelect += "\i[31" + x2 + y2 + "99]";
+	}
+	return sSelect;
+}
+//--------------------
+// 対象を指定した方向へ移動
+string moveForce(int dx, int dy, string t)
+{
+	//移動できない場合は画面をリフレッシュ
+	if (!canMove(dx, dy, t))
+		return showStatus();
+	//マップを移動後の状態に更新して表示
+	a = getMovedMap(dx, dy, t, a);
+	return showStatus();
+}
+//--------------------
+// 対象を指定した方向へ移動可能かどうか
+int canMove(int dx, int dy, string t)
+{
+	array am = getMovableTarget(dx, dy);
+	for (int i = 0; i < _aryvn(am); i++)
+	{
+		if (am[i] == t)
+			return 1;
+	}
+	return 0;
+}
+//--------------------
+// 対象をランダムに移動 対象を省略時は対象もランダムに選択
+string moveRandom(string t)
+{
+	array aChoice;
+	array aL = getMovableTarget(-1, 0);
+	array aR = getMovableTarget(1, 0);
+	array aU = getMovableTarget(0, -1);
+	array aD = getMovableTarget(0, 1);
+	for (int i = 0; i < _aryvn(aL); i++)
+	{
+		if ((t == "") || (t == aL[i]))
+			aChoice += {"L", aL[i]};
+	}
+	for (int i = 0; i < _aryvn(aR); i++)
+	{
+		if ((t == "") || (t == aR[i]))
+			aChoice += {"R", aR[i]};
+	}
+	for (int i = 0; i < _aryvn(aU); i++)
+	{
+		if ((t == "") || (t == aU[i]))
+			aChoice += {"U", aU[i]};
+	}
+	for (int i = 0; i < _aryvn(aD); i++)
+	{
+		if ((t == "") || (t == aD[i]))
+			aChoice += {"D", aD[i]};
+	}
+	if (_aryvn(aChoice) == 0)
+		return showStatus();
+	int index = _rand() * _aryvn(aChoice) / 10000;
+	array c = aChoice[index];
+	string s;
+	switch (c[0])
+	{
+	  case "L":
+		s = moveLeft(c[1]);
+		break;
+	  case "R":
+		s = moveRight(c[1]);
+		break;
+	  case "U":
+		s = moveUp(c[1]);
+		break;
+	  case "D":
+		s = moveDown(c[1]);
+		break;
+	  default:
+		break;
+	}
+	return s;
+}
+//--------------------
+// 対象tを指定した方向dx,dyへ移動した後のマップを返す
+array getMovedMap(int dx, int dy, string t, array am)
+{
+	array at = getStartPoint(t, am);
+	int x = at[0];
+	int y = at[1];
+	switch (t)
+	{
+	  case "空白":
+	  case "":
+		break;
+	  case "父親":
+	  case "母親":
+	  case "祖父":
+	  case "祖母":
+		if (dy == 0)
+		{
+			am[y][x] = "空白";
+			am[y + 1][x] = "空白";
+			am[y][x + dx] = t;
+			am[y + 1][x + dx] = t;
+		}
+		else if (dx == 0)
+		{
+			if (dy == 1)
+			{
+				am[y][x] = "空白";
+				am[y + 2][x] = t;
+			}
+			else if (dy == -1)
+			{
+				am[y - 1][x] = t;
+				am[y + 1][x] = "空白";
+			}
+		}
+		break;
+	  case "娘":
+		if (dx == 1)
+		{
+			am[y][x] = "空白";
+			am[y + 1][x] = "空白";
+			am[y][x + 2] = t;
+			am[y + 1][x + 2] = t;
+		}
+		else if (dx == -1)
+		{
+			am[y][x - 1] = t;
+			am[y + 1][x - 1] = t;
+			am[y][x + 1] = "空白";
+			am[y + 1][x + 1] = "空白";
+		}
+		else if (dy == 1)
+		{
+			am[y][x] = "空白";
+			am[y][x + 1] = "空白";
+			am[y + 2][x] = t;
+			am[y + 2][x + 1] = t;
+		}
+		else if (dy == -1)
+		{
+			am[y - 1][x] = t;
+			am[y - 1][x + 1] = t;
+			am[y + 1][x] = "空白";
+			am[y + 1][x + 1] = "空白";
+		}
+		break;
+	  case "兄弟":
+		if (dx == 0)
+		{
+			am[y][x] = "空白";
+			am[y][x + 1] = "空白";
+			am[y + dy][x] = t;
+			am[y + dy][x + 1] = t;
+		}
+		else if (dy == 0)
+		{
+			if (dx == 1)
+			{
+				am[y][x] = "空白";
+				am[y][x + 2] = t;
+			}
+			else if (dx == -1)
+			{
+				am[y][x - 1] = t;
+				am[y][x + 1] = "空白";
+			}
+		}
+		break;
+	  case "和裁":
+	  case "華道":
+	  case "茶道":
+	  case "書道":
+		am[y][x] = "空白";
+		am[y + dy][x + dx] = t;
+		break;
+	  default:
+		break;
+	}
+	return am;
+}
+//--------------------
+// 指定した方向(dx,dy)に移動できる対象を(0～2個)返す
+array getMovableTarget(int dx, int dy)
+{
+	//空白2個の座標
+	int y1 = -1;
+	int x1 = -1;
+	int y2 = -1;
+	int x2 = -1;
+	//空白に隣接する移動候補
+	string t1;
+	string t2;
+	//上記変数をサーチ
+	for (int y = 0; y < _aryvn(a); y++)
+	{
+		for (int x = 0; x < _aryvn(a[y]); x++)
+		{
+			if (a[y][x] == "空白")
+			{
+				if (0 <= y1)
+				{
+					y2 = y;
+					x2 = x;
+					t2 = a[y + ((-1) * dy)][x + ((-1) * dx)];
+				}
+				else
+				{
+					y1 = y;
+					x1 = x;
+					t1 = a[y + ((-1) * dy)][x + ((-1) * dx)];
+				}
+			}
+		}
+	}
+	//戻り値
+	array arT = {};
+	//対象に応じて移動可能判定
+	if (isMovableTarget1(t1, t2, dx, dy, x1, y1, x2, y2))
+		arT += t1;
+	if (isMovableTarget2(t2, dx, dy))
+		arT += t2;
+	return arT;
+}
+//--------------------
+// 1個目の移動候補が移動可能かどうか
+int isMovableTarget1(string t1, string t2, int dx, int dy, int x1, int y1, int x2, int y2)
+{
+	switch (t1)
+	{
+	  case "空白":
+	  case "":
+		break;
+	  case "父親":
+	  case "母親":
+	  case "祖父":
+	  case "祖母":
+		if (
+				((dy == 0) && (x1 == x2) && (y1 + 1 == y2) && (t1 == t2)) ||
+				(dx == 0)
+			)
+			return 1;
+		break;
+	  case "娘":
+		if (
+				((dy == 0) && (x1 == x2) && (y1 + 1 == y2) && (t1 == t2)) ||
+				((dx == 0) && (x1 + 1 == x2) && (y1 == y2) && (t1 == t2))
+			)
+			return 1;
+		break;
+	  case "兄弟":
+		if (
+				(dx == 0) && (x1 + 1 == x2) && (y1 == y2) && (t1 == t2) ||
+				(dy == 0)
+			)
+			return 1;
+		break;
+	  case "和裁":
+	  case "華道":
+	  case "茶道":
+	  case "書道":
+		return 1;
+	  default:
+		break;
+	}
+	return 0;
+}
+//--------------------
+// 2個目の移動候補が移動可能かどうか
+int isMovableTarget2(string t2, int dx, int dy)
+{
+	switch (t2)
+	{
+	  case "空白":
+	  case "":
+		break;
+	  case "父親":
+	  case "母親":
+	  case "祖父":
+	  case "祖母":
+		if (dx == 0)
+			return 1;
+		break;
+	  case "娘":
+		break;
+	  case "兄弟":
+		if (dy == 0)
+			return 1;
+		break;
+	  case "和裁":
+	  case "華道":
+	  case "茶道":
+	  case "書道":
+		return 1;
+	  default:
+		break;
+	}
+	return 0;
+}
+//------------------------------------------------------------------------------
+// 表示
+//------------------------------------------------------------------------------
+//配置図初期値 定数
+array A_RESET = {
+	{"父親",  "娘" ,  "娘" , "母親"},
+	{"父親",  "娘" ,  "娘" , "母親"},
+	{"祖父", "兄弟", "兄弟", "祖母"},
+	{"祖父", "華道", "茶道", "祖母"},
+	{"和裁", "空白", "空白", "書道"}
+};
+//配置図現在値 変数
+array a = A_RESET;
+//配置図前回値 変数
+array aPrev = a;
+//キー操作で候補が2つあった場合の結果2種類保存用
+array aSelect = {a, a};
+//キー操作で選択肢操作待ち記憶用
+int iNeedSelect;
+//OnMouseClickで消されてもOnMouseDoubleClickで復活させる用
+int iNeedSelect2;
+//選択肢の対象記憶用 突然別の操作をされても\i[*]でstopして消せるように
+array arSelectionTarget = {"", ""};
+//ステップ数
+int nStep;
+//--------------------
+// 現在の状況を表示
+string showStatus()
+{
+	//現在の状況を表示するSakuraScript(バルーン表示用とアニメーション用\i[*]が混在)
+	string status = getStatus();
+	//バルーンに表示するSakuraScript
+	string sBalloon = "\_l[200,130]\![*]\_a[ResetGame]リセット\_a";
+	//娘の座標を見てゲームクリア判定
+	array am = getStartPoint("娘", a);
+	if ((am[0] == 1) && (am[1] == 3))
+	{
+		sBalloon += "\_l[40,40]\f[height,24]Congratulations!\f[height,default]";
+		sBalloon += addStamp();
+		status +="\_w[500]\i[9000]";
+	}
+	//必要な情報を合成して表示
+	string s = "\0\_q";
+	if (ENABLE_SHOWING_BALLOON)
+		s += sBalloon;
+	s += status;
+	s += "\_q\e";
+	return s;
+}
+//--------------------
+// スタンプ帳にスタンプを追加するSakuraScriptを返す
+string addStamp()
+{
+	if (existPlugin("スタンプ帳"))
+	{
+		string path = "ghost\master\stamp.png";
+		string title = "箱入り娘クリア記念";
+		string comment = "クリアおめでとう！";
+		return "\![raiseplugin,スタンプ帳,OnStampAdd," + path + "," + title + "," + comment + "]";
+	}
+	return "";
+}
+//--------------------
+// "リセット"アンカーが選択された
+string ResetGame(dict ref)
+{
+	a = A_RESET;
+	aPrev = a;
+	nStep = 0;
+	return showStatus();
+}
+//--------------------
+// 現在の状況を表示するSakuraScriptを返す
+string getStatus()
+{
+	//バルーンに表示するSakuraScript
+	string sBalloon;
+	//マップを表示する\i[*]のみで構成されたSakuraScript
+	string sMapping;
+	//移動を表示する\i[*]のみで構成されたSakuraScript
+	string sSliding;
+	//初出の対象記憶用 ついでにアニメーション番号の上2桁を保持
+	dict dictAnimationNo;
+	//STEPを増やすかどうか(前回から変更があるかどうか)
+	int addStep = 0;
+	//マップを舐めてバルーン表示用とアニメーション用に必要なSakuraScritpを作成
+	for (int y = 0; y < _aryvn(a); y++)
+	{
+		for (int x = 0; x < _aryvn(a[y]); x++)
+		{
+			//対象をバルーンに書き出し
+			string t = a[y][x];
+			sBalloon += "\_l[" + (40 * x) + "," + (30 * y) + "]";
+			sBalloon += getFontColor(t);
+			sBalloon += _strreplace(t, "娘", " 娘 ");
+			//初出の対象
+			if (dictAnimationNo[t] == nil)
+			{
+				dictAnimationNo += $(t, getAnimationNo(t));
+				//空白以外
+				if (dictAnimationNo[t] > 0)
+				{
+					//前回の対象の座標
+					array at = getStartPoint(t, aPrev);
+					int xPrev = at[0];
+					int yPrev = at[1];
+					//今回の対象の座標と一致(動いてない)
+					if ((xPrev == x) && (yPrev == y))
+					{
+						//静止アニメーション表示
+						sMapping += "\i[" + dictAnimationNo[t] + x + y + "]";
+					}
+					//今回の対象の座標と不一致(動いた)
+					else
+					{
+						//スライディングアニメーション表示
+						sSliding += "\i[" + dictAnimationNo[t] + xPrev + yPrev + x + y + "]";
+					}
+				}
+			}
+			//前回から変更があるかどうか
+			if (t != aPrev[y][x])
+			{
+				addStep = 1;
+			}
+		}
+	}
+	//カラー戻し
+	sBalloon += "\f[color,default]";
+	//選択枠消去用
+	string sSelect;
+	//選択肢があったということは選択肢付き選択枠が残っているので消去する
+	if (iNeedSelect)
+	{
+		sSelect += getSelectNumberAnimationRemove(arSelectionTarget, aPrev);
+		//用済み
+		iNeedSelect = 0;
+		arSelectionTarget = {"", ""};
+	}
+	//クリック以外の手段によって選択枠が残ってしまった場合
+	if (selectedTarget != "")
+	{
+		//選択状態にあった対象の座標を取得
+		array at = getStartPoint(selectedTarget, a);
+		int x = at[0];
+		int y = at[1];
+		//選択枠を消去
+		sSelect += "\i[" + getSelectionNo(selectedTarget) + x + y + "99]";
+		//用済み
+		selectedTarget = "";
+	}
+	//前回と変わっていたらSTEPを増やす
+	if (addStep)
+	{
+		nStep++;
+		aPrev = a;
+	}
+	sBalloon += "\_l[200,100]STEP: " + nStep;
+	//必要な情報を合成して返す
+	string s;
+	if (ENABLE_SHOWING_BALLOON)
+		s += sBalloon;
+	if (ENABLE_RAISEOTHER)
+		s += getRaiseotherInfo();
+	if (sSliding == "")
+		s += "\s[0]" + sMapping;
+	else
+		s += sSliding;
+	s += sSelect;
+	return s;
+}
+//--------------------
+// 現在の状態を\![raiseother,...]で同時起動中のすべてのGHOSTに通知
+string getRaiseotherInfo()
+{
+	string ghosts = _systemdict["otherghostname"]["Reference0"];
+	if (ghosts == "")
+		return "";
+	string target = "__SYSTEM_ALL_GHOST__";
+	string eventId = "OnKlotski";
+	string version = "klotski/0.1";
+	string command = "BROADCAST";
+	string commandId = "status";
+	array r = { target, eventId, version, command, commandId };
+	for (int y = 0; y < _aryvn(a); y++)
+	{
+		string strRef = "";
+		for (int x = 0; x < _aryvn(a[y]); x++)
+		{
+			string t = a[y][x];
+			if (x > 0)
+				strRef += ",";
+			strRef += t;
+		}
+		r += "\"" + strRef + "\"";
+	}
+	r += nStep;
+	string s = "\![raiseother";
+	for (int i = 0; i < _aryvn(r); i++)
+	{
+		s += "," + r[i];
+	}
+	s += "]";
+	return s;
+}
+//--------------------
+// キー操作で候補が2つあった場合の表示
+string getSelectionScript(string t1, string t2)
+{
+	//候補対象を記憶
+	array arSt = {t1, t2};
+	//選択枠+選択番号を表示する\i[*]のみで構成されたSakuraScript
+	string sSelect;
+	//sSelectを構築
+	for (int i = 0; i < _aryvn(arSt); i++)
+	{
+		//候補対象の座標を取得
+		string t = arSt[i];
+		array aStartPoint = getStartPoint(t, a);
+		int x = aStartPoint[0];
+		int y = aStartPoint[1];
+		//選択枠+選択番号表示
+		sSelect += "\i[" + getSelectionNo(t) + x + y + "]";
+		sSelect += "\i[3" + i + x + y + "]";
+	}
+	//クリックによる選択枠と被った場合はたまたまOK
+	if ((selectedTarget == t1) || (selectedTarget == t2))
+		selectedTarget = "";
+	//クリックによる選択枠が残ってしまった場合は消去する必要がある
+	if (selectedTarget != "")
+	{
+		//選択対象の座標を取得
+		array at = getStartPoint(selectedTarget, a);
+		int x = at[0];
+		int y = at[1];
+		//選択枠消去
+		sSelect += "\i[" + getSelectionNo(selectedTarget) + x + y + "99]";
+		//用済み
+		selectedTarget = "";
+	}
+	//バルーンに表示するSakuraScript
+	string sBalloon;
+	sBalloon += "\_l[200,30]\![*]\__q[TargetSelect,0]1: " + t1 + "\__q";
+	sBalloon += "\_l[200,50]\![*]\__q[TargetSelect,1]2: " + t2 + "\__q";
+	//必要な情報を合成して返す
+	string s;
+	if (ENABLE_SHOWING_BALLOON)
+		s += sBalloon;
+	s += sSelect;
+	return s;
+}
+//--------------------
+// キー操作してたのに突然バルーンの選択肢をマウスでクリックされた場合
+string TargetSelect(dict ref)
+{
+	return autoSelection(ref["Reference2"]);
+}
+//--------------------
+// 選択肢操作待ちの状態で選択番号に応じたマップの入れ替えを実行して表示
+string autoSelection(int i)
+{
+	if (iNeedSelect)
+	{
+		a = aSelect[i];
+		return showStatus();
+	}
+	else
+	{
+		return "";
+	}
+}
+//------------------------------------------------------------------------------
+// UTILITY
+//------------------------------------------------------------------------------
+// 対象tの左上の座標を取得
+array getStartPoint(string t, array at)
+{
+	for (int y = 0; y < _aryvn(at); y++)
+	{
+		for (int x = 0; x < _aryvn(at[y]); x++)
+		{
+			if (at[y][x] == t)
+			{
+				return {x, y};
+			}
+		}
+	}
+}
+//--------------------
+// 対象tのフォントカラーを取得
+string getFontColor(string t)
+{
+	dict dColor = ${
+		$("兄弟", "255,255,0"),
+		$( "娘" , "127,0,127"),
+		$("父親", "0,0,255"),
+		$("母親", "255,0,0"),
+		$("祖父", "0,255,255"),
+		$("祖母", "255,127,0"),
+		$("和裁", "0,255,0"),
+		$("華道", "0,255,0"),
+		$("茶道", "0,255,0"),
+		$("書道", "0,255,0"),
+		$("空白", "255,255,255")
+	};
+	return "\f[color," + dColor[t] + "]";
+}
+//--------------------
+// 対象tのアニメーション番号の上2桁を取得
+int getAnimationNo(string t)
+{
+	dict dicTable = ${
+		$("父親", 11),
+		$( "娘" , 12),
+		$("母親", 13),
+		$("祖父", 14),
+		$("兄弟", 15),
+		$("祖母", 16),
+		$("華道", 17),
+		$("茶道", 18),
+		$("和裁", 19),
+		$("書道", 20)
+	};
+	return dicTable[t];
+}
+//--------------------
+// 対象tのサイズを囲う選択肢番号の上2桁を取得
+int getSelectionNo(string t)
+{
+	dict dicTable = ${
+		$("父親", 22),
+		$( "娘" , 24),
+		$("母親", 22),
+		$("祖父", 22),
+		$("兄弟", 23),
+		$("祖母", 22),
+		$("華道", 21),
+		$("茶道", 21),
+		$("和裁", 21),
+		$("書道", 21)
+	};
+	return dicTable[t];
+}
+//--------------------
+// 指定したプラグインが存在するか
+int existPlugin(string pluginName)
+{
+	for (int i = 0; _systemdict["installedplugin"]["Reference"+ i] != nil; i++)
+	{
+		array arPlugin = _strsplit(_systemdict["installedplugin"]["Reference"+ i], _bytechar(1));
+		if (arPlugin[0] == pluginName)
+		{
+			return 1;
+		}
+	}
+	return 0;
+}
+//******************************************************************************
+// UI event
+//******************************************************************************
+//------------------------------------------------------------------------------
+// ショートカットキー
+//------------------------------------------------------------------------------
+string OnKeyPress(dict ref)
+{
+	string s;
+	switch (ref["Reference0"])
+	{
+	  case "a":
+		//答え合わせ
+		s = autoSolve();
+		break;
+	  case "d":
+		//デバッグ時に色々記述を変えて使っています
+		//s = makeSurfacesTxt();
+		break;
+	  case "m":
+		//ステータス表示(リフレッシュ)
+		s = showStatus();
+		break;
+	  case "s":
+		//答え合わせ中断 and Surfaces.txt書き出し中断
+		s = stopAutoSolve() + stopMakeSurfacesTxt();
+		break;
+	  case "r":
+		//リセット and SHIORIリロード
+		a = A_RESET;
+		aPrev = a;
+		nStep = 0;
+		s = "\![reload,shiori]" + showStatus();
+		break;
+	  case "right":
+		//キー操作 何かを右へ移動
+		s = moveWithoutTarget(1, 0);
+		break;
+	  case "left":
+		//キー操作 何かを左へ移動
+		s = moveWithoutTarget(-1, 0);
+		break;
+	  case "up":
+		//キー操作 何かを上へ移動
+		s = moveWithoutTarget(0, -1);
+		break;
+	  case "down":
+		//キー操作 何かを下へ移動
+		s = moveWithoutTarget(0, 1);
+		break;
+	  case "1":
+		//キー操作 選択肢1の対象を移動
+		s = autoSelection(0);
+		break;
+	  case "2":
+		//キー操作 選択肢2の対象を移動
+		s = autoSelection(1);
+		break;
+	  default:
+		s = "";
+		break;
+	}
+	return s;
+}
+//------------------------------------------------------------------------------
+// 選択肢・アンカー
+//------------------------------------------------------------------------------
+string OnChoiceSelect(dict ref)
+{
+	return _fncstr(ref["Reference0"], ref);
+}
+string OnChoiceSelectEx(dict ref)
+{
+	return _fncstr(ref["Reference1"], ref);
+}
+string OnAnchorSelect(dict ref)
+{
+	return _fncstr(ref["Reference0"], ref);
+}
+string OnAnchorSelectEx(dict ref)
+{
+	return _fncstr(ref["Reference1"], ref);
+}
+//------------------------------------------------------------------------------
+// 答え合わせ
+//------------------------------------------------------------------------------
+//制御用
+int isAutoSolving;
+int isStoppedSolving;
+//--------------------
+// 開始
+string autoSolve()
+{
+	if (isAutoSolving)
+		return "";
+	_create_thread("TH_AutoSolve");
+	isAutoSolving = 1;
+	return "";
+}
+//--------------------
+// 中断
+string stopAutoSolve()
+{
+	if (!isAutoSolving)
+		return "";
+	isStoppedSolving = 1;
+	return "";
+}
+//--------------------
+// 時間かかるので別スレッドで呼んでください
+TH_AutoSolve()
+{
+	a = A_RESET;
+	aPrev = a;
+	nStep = 0;
+	double wait = 0.25;
+	array arSolution = {
+		{"R", "和裁"}, {"D", "祖父"}, {"L", "書道"}, {"D", "祖母"}, {"L", "兄弟"},
+		{"U", "茶道"}, {"R", "茶道"}, {"R", "兄弟"}, {"U", "祖父"}, {"L", "和裁"},
+		{"L", "書道"}, {"L", "祖母"}, {"D", "茶道"}, {"R", "兄弟"}, {"U", "華道"},
+		{"U", "書道"}, {"R", "和裁"}, {"D", "祖父"}, {"L", "華道"}, {"L", "兄弟"},
+		{"D", "母親"}, {"D", "茶道"}, {"D", "母親"}, {"R",  "娘" }, {"R", "父親"},
+		{"U", "華道"}, {"U", "祖父"}, {"L", "和裁"}, {"U", "華道"}, {"U", "祖父"},
+		{"L", "書道"}, {"L", "祖母"}, {"L", "茶道"}, {"D", "母親"}, {"R", "兄弟"},
+		{"U", "祖母"}, {"R", "和裁"}, {"U", "茶道"}, {"R", "和裁"}, {"D", "祖母"},
+		{"D", "父親"}, {"R", "華道"}, {"U", "祖父"}, {"U", "書道"}, {"L", "祖母"},
+		{"D", "父親"}, {"D", "父親"}, {"R", "書道"}, {"U", "書道"}, {"L", "兄弟"},
+		{"U", "母親"}, {"R", "和裁"}, {"D", "茶道"}, {"L", "兄弟"}, {"L", "母親"},
+		{"U", "和裁"}, {"R", "茶道"}, {"D", "母親"}, {"R", "兄弟"}, {"D", "祖父"},
+		{"R", "兄弟"}, {"U", "父親"}, {"L", "華道"}, {"U", "書道"}, {"U", "父親"},
+		{"L", "母親"}, {"L", "茶道"}, {"D", "和裁"}, {"D", "兄弟"}, {"D",  "娘" },
+		{"R", "書道"}, {"R", "華道"}, {"R", "書道"}, {"R", "華道"}, {"U", "父親"},
+		{"U", "母親"}, {"L", "茶道"}, {"L", "和裁"}, {"U", "祖父"}, {"U", "祖母"},
+		{"L", "茶道"}, {"L", "和裁"}, {"D", "兄弟"}, {"D",  "娘" }, {"D", "華道"},
+		{"R", "華道"}, {"R", "父親"}, {"U", "母親"}, {"U", "母親"}, {"L",  "娘" },
+		{"D", "華道"}, {"D", "書道"}, {"D", "華道"}, {"D", "書道"}, {"R", "父親"},
+		{"R", "母親"}, {"R", "祖父"}, {"U", "祖母"}, {"U", "祖母"}, {"L",  "娘" },
+		{"L", "華道"}, {"U", "華道"}, {"U", "兄弟"}, {"R", "和裁"}, {"R", "茶道"},
+		{"R", "和裁"}, {"R", "茶道"}, {"D",  "娘" }, {"L", "華道"}, {"L", "書道"},
+		{"L", "華道"}, {"L", "書道"}, {"U", "兄弟"}, {"U", "和裁"}, {"R", "茶道"},
+		{"R",  "娘" }
+	};
+	_speak(showStatus());
+	_sleep(wait);
+	for (int i = 0; i < _aryvn(arSolution); i++)
+	{
+		switch (arSolution[i][0])
+		{
+		  case "L":
+			_speak(moveLeft(arSolution[i][1]));
+			break;
+		  case "R":
+			_speak(moveRight(arSolution[i][1]));
+			break;
+		  case "U":
+			_speak(moveUp(arSolution[i][1]));
+			break;
+		  case "D":
+			_speak(moveDown(arSolution[i][1]));
+			break;
+		  default:
+			break;
+		}
+		_sleep(wait);
+		if (isStoppedSolving)
+		{
+			isStoppedSolving = 0;
+			break;
+		}
+	}
+	isAutoSolving = 0;
+}
+//------------------------------------------------------------------------------
+// surfaces.txt書き出し
+//------------------------------------------------------------------------------
+//サイズの異なるSHELLを作成する時は以下のパラメータを変更して実行する
+int COLLISION_OFFSET_X = 64;  //左上当たり判定までのx座標
+int COLLISION_OFFSET_Y = 64;  //左上当たり判定までのy座標
+int COLLISION_LENGTH   = 128; //駒の大きさ
+//以下のパラメータは好みで設定する (8, 10) => (4, 20)にすると 滑らか => カクカク になるが行数が減る
+int SLIDING_PATTERN_DIVISION = 8;  //スライディングアニメーション分割数(COLLISION_LENGTHの約数を指定)
+int SLIDING_ANIMATION_WAIT   = 10; //スライディングアニメーション1コマ当たりのウェイト(ms)
+//制御用
+int isMakingSurfacesTxt;
+int isStoppedMakingSurfacesTxt;
+//--------------------
+// 開始
+string makeSurfacesTxt()
+{
+	if (isMakingSurfacesTxt)
+		return "";
+	isMakingSurfacesTxt = 1;
+	_create_thread("TH_MakeSurfacesTxt");
+	return "\0\_qStart.\_q\e";
+}
+//--------------------
+// 中断
+string stopMakeSurfacesTxt()
+{
+	if (!isMakingSurfacesTxt)
+		return "";
+	isStoppedMakingSurfacesTxt = 1;
+	return "";
+}
+//--------------------
+// 時間かかるので別スレッドで呼んでください
+TH_MakeSurfacesTxt()
+{
+	TH_MakeSurfacesTxtCollision("..\..\shell\master\surfaces_collision.txt");
+	TH_MakeSurfacesTxtMappingAnimation("..\..\shell\master\surfaces_mapping_animation.txt");
+	TH_MakeSurfacesTxtSliderAnimation("..\..\shell\master\surfaces_slider_animation.txt");
+	isMakingSurfacesTxt = 0;
+	_speak("\0\_qDone.\_q");
+}
+//--------------------
+// surfaces_collision.txt書き出し(一瞬で終わる)
+TH_MakeSurfacesTxtCollision(string path)
+{
+	int xOfs = COLLISION_OFFSET_X;
+	int yOfs = COLLISION_OFFSET_Y;
+	int l    = COLLISION_LENGTH;
+	array arText = {
+		"charset,Shift_JIS",
+		"",
+		"descript",
+		"{",
+		"version,1",
+		"}",
+		"",
+		"surface.append0",
+		"{"
+	};
+	int nc = 0;
+	for (int y = 0; y < _aryvn(a); y++)
+	{
+		for (int x = 0; x < _aryvn(a[y]); x++)
+		{
+			arText += "collision" + (nc++) + "," + (l * x + xOfs) + ","  + (l * y + yOfs) +  "," + (l * (x + 1) + xOfs) + "," + (l * (y + 1) + yOfs) + ",area" + x + y;
+		}
+	}
+	arText += "}";
+	arText += "";
+
+	_writetext(path, arText, "sjis");
+}
+//--------------------
+// surfaces_mapping_animation.txt書き出し(わりと早く終わる)
+TH_MakeSurfacesTxtMappingAnimation(string path)
+{
+	array arTable = {
+		{"父親", "11", "101"},
+		{ "娘" , "12", "102"},
+		{"母親", "13", "103"},
+		{"祖父", "14", "104"},
+		{"兄弟", "15", "105"},
+		{"祖母", "16", "106"},
+		{"華道", "17", "107"},
+		{"茶道", "18", "108"},
+		{"和裁", "19", "109"},
+		{"書道", "20", "110"},
+		{"選択枠11", "21", "111"},
+		{"選択枠12", "22", "112"},
+		{"選択枠21", "23", "121"},
+		{"選択枠22", "24", "122"},
+		{"選択肢1", "30", "119"},
+		{"選択肢2", "31", "129"}
+	};
+	array arGroup = {};
+	_speak("\0\_qMaking surfaces_mapping_animation.txt (making text...)");
+	for (int i = 0; i < _aryvn(arTable); i++)
+	{
+		arGroup += "//-----" + arTable[i][0] + "-----";
+		for (int y = 0; y < _aryvn(a); y++)
+		{
+			for (int x = 0; x < _aryvn(a[y]); x++)
+			{
+				switch (arTable[i][0])
+				{
+				  case "父親":
+				  case "母親":
+				  case "祖父":
+				  case "祖母":
+				  case "選択枠12":
+					if (y + 1 == _aryvn(a))
+						break;
+					arGroup += getMappingAnimation(x, y, arTable[i][1], arTable[i][2], arTable[i][0]);
+					break;
+				  case "娘":
+				  case "選択枠22":
+					if ((x + 1 == _aryvn(a[y])) || (y + 1 == _aryvn(a)))
+						break;
+					arGroup += getMappingAnimation(x, y, arTable[i][1], arTable[i][2], arTable[i][0]);
+					break;
+				  case "兄弟":
+				  case "選択枠21":
+					if (x + 1 == _aryvn(a[y]))
+						break;
+					arGroup += getMappingAnimation(x, y, arTable[i][1], arTable[i][2], arTable[i][0]);
+					break;
+				  case "華道":
+				  case "茶道":
+				  case "和裁":
+				  case "書道":
+				  case "選択枠11":
+				  case "選択肢1":
+				  case "選択肢2":
+					arGroup += getMappingAnimation(x, y, arTable[i][1], arTable[i][2], arTable[i][0]);
+					break;
+				  default:
+					break;
+				}
+			}
+		}
+	}
+
+	array arText = {
+		"charset,Shift_JIS",
+		"",
+		"descript",
+		"{",
+		"version,1",
+		"}",
+		"",
+		"surface.append0",
+		"{"
+	};
+	for (int i = 0; i < _aryvn(arGroup); i++)
+	{
+		_speak("\0\_qMaking surfaces_mapping_animation.txt (unifying array... " + (i + 1) + "/" + _aryvn(arGroup) + ")");
+		switch(_gettype(arGroup[i]))
+		{
+		  case "string":
+			arText += arGroup[i];
+			break;
+		  case "array":
+			array g = arGroup[i];
+			for (int j = 0; j < _aryvn(g); j++)
+			{
+				arText += g[j];
+			}
+			break;
+		  default:
+			break;
+		}
+		if (isStoppedMakingSurfacesTxt)
+		{
+			isStoppedMakingSurfacesTxt = 0;
+			return;
+		}
+	}
+	arText += "}";
+	arText += "";
+
+	_writetext(path, arText, "sjis");
+}
+//--------------------
+// 静止アニメーションを表示するだけ
+// 選択枠・選択番号については\i[*]で消去できるようstop定義も用意しておく
+array getMappingAnimation(int x, int y, string strTargetId, string strTargetSurfaceNo, string t)
+{
+	int xOfs = COLLISION_OFFSET_X;
+	int yOfs = COLLISION_OFFSET_Y;
+	int l    = COLLISION_LENGTH;
+	int nX = xOfs + l * x;
+	int nY = yOfs + l * y;
+	array arText;
+	arText += "animation" + strTargetId + x + y + ".interval,never";
+	arText += "animation" + strTargetId + x + y + ".pattern0,overlayfast," + strTargetSurfaceNo + ",0," + nX + "," + nY;
+	if (_regex_match(t, "選択枠11|選択枠21|選択枠12|選択枠22|選択肢1|選択肢2"))
+	{
+		arText += "";
+		arText += "animation" + strTargetId + x + y + "99.interval,never";
+		arText += "animation" + strTargetId + x + y + "99.pattern0,stop," + strTargetId + x + y;
+	}
+	arText += "";
+	return arText;
+}
+//--------------------
+// surfaces_slider_animation.txt書き出し(死ぬほど時間かかる)
+TH_MakeSurfacesTxtSliderAnimation(string path)
+{
+	array arTable = {
+		{"父親", "11", "101"},
+		{ "娘" , "12", "102"},
+		{"母親", "13", "103"},
+		{"祖父", "14", "104"},
+		{"兄弟", "15", "105"},
+		{"祖母", "16", "106"},
+		{"華道", "17", "107"},
+		{"茶道", "18", "108"},
+		{"和裁", "19", "109"},
+		{"書道", "20", "110"}
+	};
+	array arGroup = {};
+	for (int i = 0; i < _aryvn(arTable); i++)
+	{
+		_speak("\0\_qMaking surfaces_slider_animation.txt (making text... " + (i + 1) + "/" + _aryvn(arTable) + ")");
+		for (int y = 0; y < _aryvn(a); y++)
+		{
+			for (int x = 0; x < _aryvn(a[y]); x++)
+			{
+				switch (arTable[i][0])
+				{
+				  case "父親":
+				  case "母親":
+				  case "祖父":
+				  case "祖母":
+					if (y + 1 == _aryvn(a))
+						break;
+					if (x - 1 >= 0)
+						arGroup += getSliderAnimation({x - 1, y}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (x + 1 < _aryvn(a[y]))
+						arGroup += getSliderAnimation({x + 1, y}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (y - 1 >= 0)
+						arGroup += getSliderAnimation({x, y - 1}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (y + 2 < _aryvn(a))
+						arGroup += getSliderAnimation({x, y + 1}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					break;
+				  case "娘":
+					if ((x + 1 == _aryvn(a[y])) || (y + 1 == _aryvn(a)))
+						break;
+					if (x - 1 >= 0)
+						arGroup += getSliderAnimation({x - 1, y}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (x + 2 < _aryvn(a[y]))
+						arGroup += getSliderAnimation({x + 1, y}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (y - 1 >= 0)
+						arGroup += getSliderAnimation({x, y - 1}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (y + 2 < _aryvn(a))
+						arGroup += getSliderAnimation({x, y + 1}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					break;
+				  case "兄弟":
+					if (x + 1 == _aryvn(a[y]))
+						break;
+					if (x - 1 >= 0)
+						arGroup += getSliderAnimation({x - 1, y}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (x + 2 < _aryvn(a[y]))
+						arGroup += getSliderAnimation({x + 1, y}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (y - 1 >= 0)
+						arGroup += getSliderAnimation({x, y - 1}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (y + 1 < _aryvn(a))
+						arGroup += getSliderAnimation({x, y + 1}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					break;
+				  case "華道":
+				  case "茶道":
+				  case "和裁":
+				  case "書道":
+					if (x - 1 >= 0)
+						arGroup += getSliderAnimation({x - 1, y}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (x + 1 < _aryvn(a[y]))
+						arGroup += getSliderAnimation({x + 1, y}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (y - 1 >= 0)
+						arGroup += getSliderAnimation({x, y - 1}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					if (y + 1 < _aryvn(a))
+						arGroup += getSliderAnimation({x, y + 1}, {x, y}, arTable[i][1], arTable[i][2], arTable[i][0]);
+					break;
+				  default:
+					break;
+				}
+			}
+		}
+	}
+
+	array arText = {
+		"charset,Shift_JIS",
+		"",
+		"descript",
+		"{",
+		"version,1",
+		"}",
+		"",
+		"surface.append0",
+		"{"
+	};
+	for (int i = 0; i < _aryvn(arGroup); i++)
+	{
+		_speak("\0\_qMaking surfaces_slider_animation.txt (unifying array... " + (i + 1) + "/" + _aryvn(arGroup) + ")");
+		array g = arGroup[i];
+		for (int j = 0; j < _aryvn(g); j++)
+		{
+			arText += g[j];
+		}
+		if (isStoppedMakingSurfacesTxt)
+		{
+			isStoppedMakingSurfacesTxt = 0;
+			return;
+		}
+	}
+	arText += "}";
+	arText += "";
+
+	_writetext(path, arText, "sjis");
+}
+//--------------------
+// まず前回いた場所の静止アニメーションをstopで消去
+// ついでに前回いた場所の選択枠も消去
+// そして目的地の座標に向かって徐々に移動
+// 移動後に静止アニメーションをstartさせて自身を-1で非表示にする
+// こうすることで次また座標指定でstopをかけて消去できるようにしている
+array getSliderAnimation(array arPrevPoint, array arNextPoint, string strTargetId, string strTargetSurfaceNo, string t)
+{
+	int xOfs = COLLISION_OFFSET_X;
+	int yOfs = COLLISION_OFFSET_Y;
+	int l    = COLLISION_LENGTH;
+	array arText;
+	int nPattern = SLIDING_PATTERN_DIVISION;
+	int diff = l / nPattern;
+	int xPP = arPrevPoint[0];
+	int yPP = arPrevPoint[1];
+	int xNP = arNextPoint[0];
+	int yNP = arNextPoint[1];
+	int xPrev = xOfs + l * xPP;
+	int yPrev = yOfs + l * yPP;
+	int xNext = xOfs + l * xNP;
+	int yNext = yOfs + l * yNP;
+	int np = 0;
+
+	arText += "animation" + strTargetId + xPP + yPP + xNP + yNP + ".interval,never";
+	arText += "animation" + strTargetId + xPP + yPP + xNP + yNP + ".pattern" + (np++) + ",stop," + strTargetId + xPP + yPP;
+	if ((t == "娘") && (xPP == 1) && (yPP == 3))
+		arText += "animation" + strTargetId + xPP + yPP + xNP + yNP + ".pattern" + (np++) + ",stop,9000";
+	arText += "animation" + strTargetId + xPP + yPP + xNP + yNP + ".pattern" + (np++) + ",stop," + getSelectionNo(t) + xPP + yPP;
+	for (int i = 0; i <= nPattern; i++)
+	{
+		string t = "";
+		t += "animation" + strTargetId + xPP + yPP + xNP + yNP + ".pattern" + (np++) + ",overlayfast," + strTargetSurfaceNo + ",";
+		if (i == 0)
+			t += 0;
+		else
+			t += SLIDING_ANIMATION_WAIT;
+		t += "," + (xPrev + (i * diff * (xNP - xPP))) + "," + (yPrev + (i * diff * (yNP - yPP)));
+		arText += t;
+	}
+	arText += "animation" + strTargetId + xPP + yPP + xNP + yNP + ".pattern" + (np++) + ",start," + strTargetId + xNP + yNP;
+	arText += "animation" + strTargetId + xPP + yPP + xNP + yNP + ".pattern" + (np++) + ",overlayfast,-1,0," + xNext + "," + yNext;
+	arText += "";
+
+	return arText;
+}
+
+//******************************************************************************
+// original event
+//******************************************************************************
+//------------------------------------------------------------------------------
+// OnKlotskiイベント(同時起動中のGHOST等がこのGHOSTを"操る"ためのもの)
+// 引数にrefを持たない関数もReferenceで引数を指定して実行できる
+// USAGE: \![raiseother,箱入り娘,OnKlotski,klotski/0.1,EXECUTE,function,moveRandom]
+//------------------------------------------------------------------------------
+string OnKlotski(dict ref)
+{
+	string version = ref["Reference0"]; //"klotski/0.1"
+	string command = ref["Reference1"]; //"EXECUTE"
+	if ((version != "klotski/0.1") || (command != "EXECUTE"))
+		return "";
+	string request = ref["Reference2"]; //"function"
+	switch (request)
+	{
+	  //関数を実行する
+	  case "function":
+		string functionName = ref["Reference3"]; //任意
+		array arg;
+		for (int i = 4; ref["Reference" + i] != nil; i++)
+		{
+			arg += ref["Reference" + i];
+		}
+		array r;
+		r += _fncstr(functionName, arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
+		if (_gettype(r[0]) == "string")
+			return r[0];
+		break;
+	  default:
+		break;
+	}
+	return "";
+}
+
+//******************************************************************************
+// network update
+//******************************************************************************
+string homeurl()    { return "http://home.384.jp/evidence/update/hakoirimusume/"; }
+string useorigin1() { return "1"; }
+
+//******************************************************************************
+// recommend sites
+//******************************************************************************
+string sakura.portalsites()
+{
+	string s = "";
+	s += "Disc-2" + _bytechar(1)
+		+ "http://disc2.s56.xrea.com/" + _bytechar(1)
+		+ "http://disc2.s56.xrea.com/image/disc_2.gif" + _bytechar(1)
+		+ _bytechar(2);
+	return s;
+}
+string sakura.recommendsites()
+{
+	string s = "";
+	s += "箱入り娘 (パズル) - Wikipedia" + _bytechar(1)
+		+ "https://ja.wikipedia.org/wiki/%E7%AE%B1%E5%85%A5%E3%82%8A%E5%A8%98_(%E3%83%91%E3%82%BA%E3%83%AB)" + _bytechar(1)
+		+ _bytechar(1)
+		+ _bytechar(2);
+	return s;
+}

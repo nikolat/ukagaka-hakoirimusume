@@ -1,0 +1,105 @@
+charset,Shift_JIS
+//======================================================================
+// 手動で定義しているのはこのファイルだけです。
+// 以下のファイルはゴースト自身の機能で出力しています。
+// (main.azr内makeSurfacesTxt関数を実行すると作成される)
+// ・surfaces_collision.txt
+// ・surfaces_mapping_animation.txt
+// ・surfaces_slider_animation.txt
+// \i[9000]はゲームクリア時に実行されます。
+// \i[9999]はstopのみのアニメーションを実行した後に実行されます。
+// (SSP/2.4.94ではstopで描画を消去するにはその後別の描画が必要らしい)
+//======================================================================
+descript
+{
+version,1
+}
+
+surface0
+{
+//-----エレメント合成-----
+element0,base,surface0.png,0,0
+
+//-----ゲームクリアー-----
+animation9000.interval,never
+animation9000.pattern0,stop,1213
+animation9000.pattern1,overlayfast,102,0,192,448
+animation9000.pattern2,overlayfast,102,200,192,456
+animation9000.pattern3,overlayfast,102,200,192,464
+animation9000.pattern4,overlayfast,102,200,192,472
+animation9000.pattern5,overlayfast,102,200,192,480
+animation9000.pattern6,overlayfast,102,200,192,488
+animation9000.pattern7,overlayfast,102,200,192,496
+animation9000.pattern8,overlayfast,102,200,192,504
+animation9000.pattern9,overlayfast,102,200,192,512
+
+//-----dummy-----
+animation9999.interval,never
+animation9999.pattern0,overlayfast,10,0,0,0
+}
+
+//アニメーション合成用サーフェス定義
+surface101
+{
+element0,base,element_chichioya.png,0,0
+}
+surface102
+{
+element0,base,element_musume.png,0,0
+}
+surface103
+{
+element0,base,element_hahaoya.png,0,0
+}
+surface104
+{
+element0,base,element_sofu.png,0,0
+}
+surface105
+{
+element0,base,element_kyoudai.png,0,0
+}
+surface106
+{
+element0,base,element_sobo.png,0,0
+}
+surface107
+{
+element0,base,element_kadou.png,0,0
+}
+surface108
+{
+element0,base,element_sadou.png,0,0
+}
+surface109
+{
+element0,base,element_wasai.png,0,0
+}
+surface110
+{
+element0,base,element_shodou.png,0,0
+}
+surface111
+{
+element0,base,element_select11.png,0,0
+}
+surface112
+{
+element0,base,element_select12.png,0,0
+}
+surface121
+{
+element0,base,element_select21.png,0,0
+}
+surface122
+{
+element0,base,element_select22.png,0,0
+}
+surface119
+{
+element0,base,element_select1.png,0,0
+}
+surface129
+{
+element0,base,element_select2.png,0,0
+}

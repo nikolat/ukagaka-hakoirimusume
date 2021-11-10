@@ -1,0 +1,11 @@
+charset,Shift_JIS
+type,ghost
+shiori,akari.dll
+name,箱入り娘
+sakura.name,ナントカしないと出られない部屋
+kero.name,娘
+craftman,Don
+craftmanurl,http://nikolat.herokuapp.com/
+homeurl,http://home.384.jp/evidence/update/hakoirimusume/
+icon,icon.ico
+don't need onmousemove,1
