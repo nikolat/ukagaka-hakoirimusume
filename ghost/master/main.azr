@@ -1513,7 +1513,7 @@ string OnKlotski(dict ref)
 //******************************************************************************
 // network update
 //******************************************************************************
-string homeurl()    { return "http://home.384.jp/evidence/update/hakoirimusume/"; }
+string homeurl()    { return "https://raw.githubusercontent.com/nikolat/ukagaka-hakoirimusume/main/"; }
 string useorigin1() { return "1"; }
 
 //******************************************************************************
