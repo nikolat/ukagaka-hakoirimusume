@@ -5,7 +5,7 @@ name,箱入り娘
 sakura.name,ナントカしないと出られない部屋
 kero.name,娘
 craftman,Don
-craftmanurl,http://nikolat.herokuapp.com/
+craftmanurl,https://nikolat.github.io/
 homeurl,https://raw.githubusercontent.com/nikolat/ukagaka-hakoirimusume/main/
 icon,icon.ico
 don't need onmousemove,1
